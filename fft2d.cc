@@ -57,13 +57,12 @@ void Transform2D(const char* inputFN)
   
   Complex* after1d = new Complex[total_len];
   Complex* after1d_local = new Complex[local_num];
-  double recvbuf[local_num]; // for slave nodes to receive from node, do 1d fft and send back
-  double sendbuf[total_len]; // for master node to transform, send and receive from slaves
 
   // since all nodes read the input, do the first 1d fft locally
   // Complex* after1d_local = new Complex[local_num];
   int startRow = height * rank / numtasks;
-  int offset = 0;
+  int global_offset = 0;
+  int local_offset = 0;
   for(int i = 0; i < height / numtasks; i++) {
     global_offset = width * (startRow + i);
     local_offset = width * i;
@@ -89,7 +88,7 @@ void Transform2D(const char* inputFN)
   // MPI_Gatherv(recvbuf, local_num, MPI_DOUBLE, sendbuf, sendcount, displ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   // for(int i = 0; i < total_len; i++) {
   //   after1d[i].imag = sendbuf[i];
-  }
+  // }
 
   if(rank == 0)
   {
