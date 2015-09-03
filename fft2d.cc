@@ -17,7 +17,7 @@
 
 using namespace std;
 
-const double PI = 3.1415926;
+void centralize(int numtasks, int rank, int total_len, int local_num, Complex* after1d_local, Complex* after1d);
 void Transform1D(Complex* h, int w, Complex* H);
 
 void Transform2D(const char* inputFN) 
@@ -50,48 +50,45 @@ void Transform2D(const char* inputFN)
   
   int height = image.GetHeight();
   int width = image.GetWidth();
-  int len = height * width;
+  int total_len = height * width;
   int local_num = width * height / numtasks;
   Complex* input = image.GetImageData();
 
-  // param for MPI_Scatterv and MPI_Gatherv
-  Complex* after1d = new Complex[len];
-  int sendcount[numtasks];
-  int displ[numtasks];
-  for(int i = 0; i < numtasks; i++) {
-    sendcount[i] = local_num;
-    displ[i] = local_num * i;
-  }
+  
+  Complex* after1d = new Complex[total_len];
+  Complex* after1d_local = new Complex[local_num];
   double recvbuf[local_num]; // for slave nodes to receive from node, do 1d fft and send back
-  double sendbuf[len]; // for master node to transform, send and receive from slaves
+  double sendbuf[total_len]; // for master node to transform, send and receive from slaves
 
   // since all nodes read the input, do the first 1d fft locally
-  Complex* after1d_local = new Complex[local_num];
+  // Complex* after1d_local = new Complex[local_num];
   int startRow = height * rank / numtasks;
-  int global_offset; // for input
-  int local_offset; // for local output
+  int offset = 0;
   for(int i = 0; i < height / numtasks; i++) {
     global_offset = width * (startRow + i);
     local_offset = width * i;
     Transform1D(input + global_offset, width, after1d_local + local_offset);
   }
 
-  // master node gathers data, real part
-  for(int i = 0; i < local_num; i++) {
-    recvbuf[i] = after1d_local[i].real;
-  }
-  MPI_Gatherv(recvbuf, local_num, MPI_DOUBLE, sendbuf, sendcount, displ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  for(int i = 0; i < len; i++) {
-    after1d[i].real = sendbuf[i];
-  }
+  // slaves send data after 1d fft back to master
+  centralize(numtasks, rank, total_len, local_num, after1d_local, after1d);
 
-  // master node gathers data, imag part
-  for(int i = 0; i < local_num; i++) {
-    recvbuf[i] = after1d_local[i].imag;
-  }
-  MPI_Gatherv(recvbuf, local_num, MPI_DOUBLE, sendbuf, sendcount, displ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-  for(int i = 0; i < len; i++) {
-    after1d[i].imag = sendbuf[i];
+  // master node gathers data, real part
+  // for(int i = 0; i < local_num; i++) {
+  //   recvbuf[i] = after1d_local[i].real;
+  // }
+  // MPI_Gatherv(recvbuf, local_num, MPI_DOUBLE, sendbuf, sendcount, displ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  // for(int i = 0; i < total_len; i++) {
+  //   after1d[i].real = sendbuf[i];
+  // }
+
+  // // master node gathers data, imag part
+  // for(int i = 0; i < local_num; i++) {
+  //   recvbuf[i] = after1d_local[i].imag;
+  // }
+  // MPI_Gatherv(recvbuf, local_num, MPI_DOUBLE, sendbuf, sendcount, displ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  // for(int i = 0; i < total_len; i++) {
+  //   after1d[i].imag = sendbuf[i];
   }
 
   if(rank == 0)
@@ -104,12 +101,23 @@ void Transform2D(const char* inputFN)
   delete[] after1d_local;
 }
 
+void centralize(int numtasks, int rank, int total_len, int local_num, Complex* after1d_local, Complex* after1d) {
+  if(rank != 0) { // slaves send back to master
+    MPI_Request request;
+    MPI_Isend(after1d_local, local_num * sizeof(Complex), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &request);
+  }
+  else { // master receives all the data from slaves
+    MPI_Status status;
+    MPI_Recv(after1d + i * local_num, local_num * sizeof(Complex), MPI_CHAR, i, 0, MPI_COMM_WORLD, &status);
+  }
+}
+
 void Transform1D(Complex* h, int w, Complex* H)
 {
   // Implement a simple 1-d DFT using the double summation equation
   // given in the assignment handout.  h is the time-domain input
   // data, w is the width (N), and H is the output array.
-  double coef = 2 * PI / w;
+  double coef = 2 * M_PI / w;
 
   for(int n = 0; n < w; n++) {
     for(int k = 0; k < w; k++) {
