@@ -1,5 +1,5 @@
 // Distributed two-dimensional Discrete FFT transform
-// YOUR NAME HERE
+// Haochen Zhao 903070441
 // ECE8893 Project 1
 
 
@@ -21,34 +21,16 @@ void distribute(int numtasks, int rank, int total_len, int local_num, Complex* m
 void transpose(Complex* in, Complex* out, int w, int h);
 void centralize(int numtasks, int rank, int total_len, int local_num, Complex* matrix);
 void Transform1D(Complex* h, int w, Complex* H);
+void Inverse_Transform1D(Complex* h, int w, Complex* H);
 
 void Transform2D(const char* inputFN) 
-{ // Do the 2D transform here.
-  // 1) Use the InputImage object to read in the Tower.txt file and
-  //    find the width/height of the input image.
-  // 2) Use MPI to find how many CPUs in total, and which one
-  //    this process is
-  // 3) Allocate an array of Complex object of sufficient size to
-  //    hold the 2d DFT results (size is width * height)
-  // 4) Obtain a pointer to the Complex 1d array of input data
-  // 5) Do the individual 1D transforms on the rows assigned to your CPU
-  // 6) Send the resultant transformed values to the appropriate
-  //    other processors for the next phase.
-  // 6a) To send and receive columns, you might need a separate
-  //     Complex array of the correct size.
-  // 7) Receive messages from other processes to collect your columns
-  // 8) When all columns received, do the 1D transforms on the columns
-  // 9) Send final answers to CPU 0 (unless you are CPU 0)
-  //   9a) If you are CPU 0, collect all values from other processors
-  //       and print out with SaveImageData().
-  InputImage image(inputFN);  // Create the helper object for reading the image
-  // Step (1) in the comments is the line above.
-  // Your code here, steps 2-9
+{ 
+  // Create the helper object for reading the image
+  InputImage image(inputFN);  
   int numtasks, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   cout << "Number of tasks are " << numtasks << ", my rank is " << rank << endl;
-  // master node 0 read the input
   
   int height = image.GetHeight();
   int width = image.GetWidth();
@@ -112,10 +94,55 @@ void Transform2D(const char* inputFN)
     image.SaveImageData("MyAfter2d.txt", transposed2d, width, height);
   }
 
+  /*********************************** Inverse *****************************************/
 
+  distribute(numtasks, rank, total_len, local_num, transposed2d);
 
-  // delete[] after1d;
-  // delete[] after1d_local;
+  Complex* inv1d = new Complex[total_len];
+  for(int i = 0; i < height / numtasks; i++) {
+    global_offset = width * (startRow + i);
+    local_offset = width * i;
+    Inverse_Transform1D(transposed2d + global_offset, width, inv1d + local_offset);
+  }
+
+  centralize(numtasks, rank, total_len, local_num, inv1d);
+
+  Complex* transInv1d = new Complex[total_len];
+  if(rank == 0) {
+    transpose(inv1d, transInv1d, width, height);
+  }
+
+  distribute(numtasks, rank, total_len, local_num, transInv1d);
+
+  Complex* inv2d = new Complex[total_len];
+  for(int i = 0; i < height / numtasks; i++) {
+    global_offset = width * (startRow + i);
+    local_offset = width * i;
+    Inverse_Transform1D(transInv1d + global_offset, width, inv2d + local_offset);
+  }
+
+  centralize(numtasks, rank, total_len, local_num, inv2d);
+
+  Complex* transInv2d = new Complex[total_len];
+  if(rank == 0) {
+    transpose(inv2d, transInv2d, width, height);
+  }
+
+  if(rank == 0) {
+    cout<<"Generating Image File MyAfterInverse.txt"<<endl;
+    image.SaveImageData("MyAfterInverse.txt", transInv2d, width, height);
+  }
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  delete[] after1d;
+  delete[] transposed1d;
+  delete[] after2d;
+  delete[] transposed2d;
+  delete[] inv1d;
+  delete[] transInv1d;
+  delete[] inv2d;
+  delete[] transInv2d;
 }
 
 void centralize(int numtasks, int rank, int total_len, int local_num, Complex* matrix) {
@@ -151,19 +178,27 @@ void transpose(Complex* in, Complex* out, int w, int h) {
       out[p++] = in[i + j * w];
 }
 
-void Transform1D(Complex* h, int w, Complex* H)
-{
-  // Implement a simple 1-d DFT using the double summation equation
-  // given in the assignment handout.  h is the time-domain input
-  // data, w is the width (N), and H is the output array.
+void Transform1D(Complex* h, int w, Complex* H){
   double coef = 2 * M_PI / w;
+  for(int n = 0; n < w; n++) {
+    for(int k = 0; k < w; k++) {
+      Complex Wnk(cos(coef * n * k), -sin(coef * n * k));
+      H[n] = Wnk * h[k] + H[n];
+    }
+  }
+}
 
+void Inverse_Transform1D(Complex* h, int w, Complex* H) {
+  double coef = 2 * M_PI / w;
   for(int n = 0; n < w; n++) {
     for(int k = 0; k < w; k++) {
       Complex Wnk(cos(coef * n * k), sin(coef * n * k));
       H[n] = Wnk * h[k] + H[n];
     }
+    H[n].real = H[n].real / w;
+    H[n].imag = H[n].imag / w;
   }
+
 }
 
 int main(int argc, char** argv)
