@@ -40,7 +40,6 @@ void Transform2D(const char* inputFN)
 
   
   Complex* after1d = new Complex[total_len];
-  // Complex* after1d_local = new Complex[local_num];
 
   // since all nodes read the input, do the first 1d fft locally
   // Complex* after1d_local = new Complex[local_num];
