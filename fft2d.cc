@@ -30,7 +30,6 @@ void Transform2D(const char* inputFN)
   int numtasks, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &numtasks);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  cout << "Number of tasks are " << numtasks << ", my rank is " << rank << endl;
   
   int height = image.GetHeight();
   int width = image.GetWidth();
